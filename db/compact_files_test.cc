@@ -531,6 +531,64 @@ TEST_F(CompactFilesTest, GetCompactionJobInfo) {
   delete db;
 }
 
+TEST_F(CompactFilesTest, CompactFilesRace) {
+  const int kNumLevel0Files = 2;
+  ASSERT_GE(kNumLevel0Files, 2);
+
+  Options options;
+  options.compression = CompressionType::kNoCompression;
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+
+  DB* db = nullptr;
+  ASSERT_OK(DestroyDB(db_name_, options));
+  Status s = DB::Open(options, db_name_, &db);
+  ASSERT_OK(s);
+  assert(db);
+
+  uint64_t key = 0;
+  WriteOptions write_opts;
+  FlushOptions flush_opts;
+  for (; key < kNumLevel0Files; ++key) {
+    ASSERT_OK(db->Put(write_opts, std::to_string(key), ""));
+    ASSERT_OK(db->Flush(flush_opts));
+  }
+
+  // There should be kNumLevel0Files SSTs.
+  std::vector<LiveFileMetaData> sst_metas;
+  std::vector<std::string> sst_files;
+  db->GetLiveFilesMetaData(&sst_metas);
+  ASSERT_EQ(kNumLevel0Files, sst_metas.size());
+  ASSERT_EQ(0, sst_metas[0].level);
+  for (const auto& file : sst_metas) {
+    fprintf(stdout, "file: %s\n", file.name.c_str());
+    sst_files.emplace_back(file.name);
+  }
+
+  // Delete the last SST.
+  Status status;
+  status = db->DeleteFile(sst_files[kNumLevel0Files - 1]);
+  ASSERT_OK(status);
+  std::vector<LiveFileMetaData>().swap(sst_metas);
+  db->GetLiveFilesMetaData(&sst_metas);
+  ASSERT_EQ(kNumLevel0Files - 1, sst_metas.size());
+  ASSERT_EQ(0, sst_metas[0].level);
+  for (const auto& file : sst_metas) {
+    fprintf(stdout, "file: %s\n", file.name.c_str());
+  }
+
+  // Try to do a compaction on all of the SSTs.
+  std::vector<std::string> ssts_to_compress;
+  for (int i = 0; i < kNumLevel0Files; ++i) {
+    ssts_to_compress.emplace_back(sst_files[i]);
+  }
+  ASSERT_TRUE(db->CompactFiles(ROCKSDB_NAMESPACE::CompactionOptions(),
+                               ssts_to_compress, 0)
+                  .IsAborted());
+
+  delete db;
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

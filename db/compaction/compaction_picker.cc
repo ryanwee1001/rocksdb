@@ -916,9 +916,13 @@ bool HaveOverlappingKeyRanges(const Comparator* c, const SstFileMetaData& a,
 
 Status CompactionPicker::SanitizeCompactionInputFilesForAllLevels(
     std::unordered_set<uint64_t>* input_files,
-    const ColumnFamilyMetaData& cf_meta, const int output_level) const {
+    const ColumnFamilyMetaData& cf_meta, const int output_level,
+    const VersionStorageInfo* vstorage) const {
   auto& levels = cf_meta.levels;
   auto comparator = icmp_->user_comparator();
+
+  // Local mapping for input_files used to improve logging messages.
+  std::unordered_map<uint64_t, std::string> input_files_num_to_name;
 
   // TODO(yhchiang): add is_adjustable to CompactionOptions
 
@@ -994,7 +998,9 @@ Status CompactionPicker::SanitizeCompactionInputFilesForAllLevels(
                                " is currently being compacted.");
       }
 
-      input_files->insert(TableFileNameToNumber(current_files[f].name));
+      const uint64_t file_number = TableFileNameToNumber(current_files[f].name);
+      input_files_num_to_name[file_number] = current_files[f].name;
+      input_files->insert(file_number);
     }
 
     // update smallest and largest key
@@ -1040,11 +1046,24 @@ Status CompactionPicker::SanitizeCompactionInputFilesForAllLevels(
                 " that has overlapping key range with one of the compaction "
                 " input file is currently being compacted.");
           }
-          input_files->insert(TableFileNameToNumber(next_lv_file.name));
+
+          const uint64_t file_number = TableFileNameToNumber(next_lv_file.name);
+          input_files_num_to_name[file_number] = next_lv_file.name;
+          input_files->insert(file_number);
         }
       }
     }
   }
+
+  // If an input file has been deleted, we should abort.
+  for (const auto file_num : *input_files) {
+    FileMetaData* metadata = vstorage->GetFileMetaDataByNumber(file_num);
+    if (!metadata) {
+      return Status::Aborted("Input file " + input_files_num_to_name[file_num] +
+                             " has been deleted");
+    }
+  }
+
   return Status::OK();
 }
 
@@ -1081,7 +1100,7 @@ Status CompactionPicker::SanitizeAndConvertCompactionInputFiles(
   }
 
   Status s = SanitizeCompactionInputFilesForAllLevels(input_files, cf_meta,
-                                                      output_level);
+                                                      output_level, vstorage);
   if (!s.ok()) {
     return s;
   }

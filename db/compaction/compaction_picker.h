@@ -236,7 +236,8 @@ class CompactionPicker {
   // sanitizes "input_files" by adding necessary files.
   virtual Status SanitizeCompactionInputFilesForAllLevels(
       std::unordered_set<uint64_t>* input_files,
-      const ColumnFamilyMetaData& cf_meta, const int output_level) const;
+      const ColumnFamilyMetaData& cf_meta, const int output_level,
+      const VersionStorageInfo* vstorage) const;
 
   // Keeps track of all compactions that are running on Level0.
   // Protected by DB mutex

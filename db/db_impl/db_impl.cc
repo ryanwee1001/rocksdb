@@ -4924,6 +4924,7 @@ Status DBImpl::DeleteFile(std::string name) {
           cfd, job_context.superversion_contexts.data(),
           *cfd->GetLatestMutableCFOptions());
     }
+    metadata->deleted = true;
     FindObsoleteFiles(&job_context, false);
   }  // lock released here
 
@@ -5017,6 +5018,7 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
           edit.DeleteFile(i, level_file->fd.GetNumber());
           deleted_files.insert(level_file);
           level_file->being_compacted = true;
+          level_file->deleted = true;
         }
       }
     }

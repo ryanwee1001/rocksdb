@@ -208,6 +208,7 @@ struct FileMetaData {
   int refs = 0;  // Reference count
 
   bool being_compacted = false;       // Is this file undergoing compaction?
+  bool deleted = false;               // Has this file been deleted?
   bool init_stats_from_file = false;  // true if the data-entry stats of this
                                       // file has initialized from file.
 
